@@ -1,7 +1,6 @@
 """Xikestor SKS3200-8E2X API Client"""
 import asyncio
 import collections
-import contextlib
 import functools
 import hashlib
 import json
@@ -235,9 +234,12 @@ class SwitchClient:
         # 2.0.0.x keeps one read position for both MAC tables (per switch, not per session), which
         # its save also moves
         self._mac_lock = asyncio.Lock()
-        # 2.0.0.x serves one connection at a time and queues only a few (CivetWeb num_threads=1,
-        # connection_queue=2, no keep-alive): its requests are sent one after another
-        self._v2_gate = asyncio.Semaphore(1)
+        # The switches' embedded HTTP servers have very small connection queues. 2.0.0.x is
+        # known to run CivetWeb with one worker, and at least some 1.0.0.x units also stop
+        # accepting connections when the VLAN page issues its five reads concurrently. Keep
+        # every firmware to one in-flight request per switch; callers still run concurrently
+        # and wait here instead of overwhelming the switch.
+        self._request_gate = asyncio.Semaphore(1)
         self._vlan_layout_lock = asyncio.Lock()
         # a layout confirmed earlier, (fw_ver, layout), and where to keep a new one (both set by the
         # API from the database, so a restart does not test it again with a temporary VLAN)
@@ -245,9 +247,8 @@ class SwitchClient:
         self.on_vlan_layout = None
 
     def _gate(self):
-        """One request at a time, unless the switch is known to run 1.0.0.x (until status.json was
-        read the firmware is unknown, and a 2.0.0.x switch would drop a burst of connections)."""
-        return contextlib.nullcontext() if firmware_line(self.fw_ver) == 1 else self._v2_gate
+        """Send one request at a time to the embedded web server on every firmware line."""
+        return self._request_gate
 
     # ── Configuration ──
     def configure(self, ip: str, username: str, password: str):

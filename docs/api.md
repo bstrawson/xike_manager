@@ -39,7 +39,12 @@ Body: {"username": "admin", "password": "yourpass"}
 
 Xikestor switches run one of two firmware lines with different web APIs: **1.0.0.x** and
 **2.0.0.x**. SwitchPilot speaks both. `firmware_line` in the switch details tells which one a
-switch runs; where an endpoint answers differently on 2.0.0.x, its row says so. On 2.0.0.x:
+switch runs; where an endpoint answers differently on 2.0.0.x, its row says so. On both lines,
+SwitchPilot sends one request at a time to the switch. Their embedded HTTP servers have very small
+connection queues; a burst of VLAN reads can otherwise make even a 1.0.0.x switch stop accepting
+HTTP connections temporarily.
+
+On 2.0.0.x:
 
 - **Read-back:** writes are read back from the switch, because the firmware answers OK even when it
   ignores a request. The exceptions are port settings, the management address and clearing the MAC
@@ -51,7 +56,6 @@ switch runs; where an endpoint answers differently on 2.0.0.x, its row says so. 
     `warnings` lists a save that did not complete.
 - **Read-only:** settings in `read_only` (`lag`, `storm`, `eee` and `time` on 2.0.0.x) answer `501` and nothing is
   sent to the switch.
-- **One request at a time:** SwitchPilot sends one request at a time to the switch.
 - **VLAN layout check (2.0.0.3):** that firmware reads its VLAN table back with 10 port entries
   instead of 11. Before its first VLAN write on such a switch, SwitchPilot creates a temporary
   VLAN "SwitchPilot test" (4094, or the highest free ID) with one tagged port, reads it back and

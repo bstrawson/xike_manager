@@ -337,9 +337,9 @@ def test_clearing_the_dynamic_table_keeps_static_entries(api):
     assert len(api.get(url(sid, "mac/static")).json()) == 1
 
 
-# ── Talking to a 2.0.0.x switch ──
-def test_requests_to_a_2_0_0_x_switch_go_one_at_a_time():
-    """The switch serves one connection at a time and queues only a few (CivetWeb num_threads=1)."""
+# ── Switch request scheduling ──
+def test_requests_to_a_switch_go_one_at_a_time_on_every_firmware():
+    """Both firmware lines have small HTTP connection queues; VLAN page bursts can wedge V1 too."""
     import asyncio
     import httpx
     from switch_client import SwitchClient
@@ -365,7 +365,7 @@ def test_requests_to_a_2_0_0_x_switch_go_one_at_a_time():
         return state["max"]
 
     assert run("2.0.0.3") == 1
-    assert run("1.0.0.6") > 1  # 1.0.0.x keeps its parallel reads
+    assert run("1.0.0.6") == 1
 
 
 def test_a_save_waits_for_a_mac_table_read():

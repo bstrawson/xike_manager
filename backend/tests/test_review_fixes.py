@@ -166,6 +166,24 @@ def test_vlan_apply_bridge_native_and_pvid_zero(api):
     assert pv["fidName_9"] == "5" and pv["fidName_2"] == "0" and pv["checkboxTag_2"] == "on"
 
 
+def test_tag_vlan_replacement_is_sorted_by_physical_port_bridge_and_vlan(api):
+    sid = add_switch(api)
+    m = api.mock
+    r = api.post(f"/api/switches/{sid}/vlans/apply", json=[
+        {"port": 3, "mode": "trunk", "native_vlan": 1, "trunk_vlans": [200, 10, 100]},
+        {"port": 2, "mode": "trunk", "native_vlan": 1, "trunk_vlans": [12, 11]},
+    ])
+    assert r.status_code == 200, r.text
+    tv = m.posted("tag_vlan_cfg.json")[-1]
+    rows = [(int(tv[f"ppName_{i}"]), int(tv[f"brName_{i}"]), int(tv[f"oVidName_{i}"]))
+            for i in range(r.json()["tag_entries"])]
+    assert rows == sorted(rows)
+    # The two high VIDs receive bridges in discovery order (100 then 200), so sorting by bridge
+    # deliberately puts VLAN 200 before VLAN 100 instead of merely retaining VID order.
+    port3_high = [(bridge, vid) for port, bridge, vid in rows if port == 3 and vid > 63]
+    assert [vid for _, vid in port3_high] == [200, 100]
+
+
 def test_vlan_apply_validation(api):
     sid = add_switch(api)
     m = api.mock

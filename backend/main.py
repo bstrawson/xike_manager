@@ -1243,12 +1243,15 @@ async def apply_vlan_assignments(switch_id: int, assignments: list[PortAssignmen
                         tag_entries.append({"port": port, "vlan_id": vid})
         if len(tag_entries) > MAX_TAG_ENTRIES:
             raise HTTPException(400, f"Too many tag VLAN entries: {len(tag_entries)} (max {MAX_TAG_ENTRIES})")
-        for i, e in enumerate(tag_entries):
-            e["entry"] = i
         async with aiosqlite.connect(DB_PATH) as db:
             cursor = await db.execute("SELECT vlan_id FROM vlans WHERE switch_id=?", (switch_id,))
             defined = {r[0] for r in await cursor.fetchall()}
         _assign_bridges(tag_entries, port_configs, current_tags, defined)
+        # The firmware receives a complete replacement table, so give its slots a stable,
+        # readable order based on the physical/front-panel port first, then FID and VID.
+        tag_entries.sort(key=lambda e: (e["port"], e["bridge"], e["vlan_id"]))
+        for i, e in enumerate(tag_entries):
+            e["entry"] = i
 
         # 3. Xikestor's established V1 flow initialises the VLAN table before rebuilding it.
         #    Sodola uses the same 1.0.0.6 version number but its SL-8T2XS-WEB native UI writes

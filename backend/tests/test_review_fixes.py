@@ -166,6 +166,23 @@ def test_vlan_apply_bridge_native_and_pvid_zero(api):
     assert pv["fidName_9"] == "5" and pv["fidName_2"] == "0" and pv["checkboxTag_2"] == "on"
 
 
+def test_v1_tagged_memberships_make_a_disabled_fid_zero_port_a_trunk(api):
+    """V1 clears bpEn for a default-bridge (FID 0) trunk but keeps its tag classifiers."""
+    sid = add_switch(api)
+    m = api.mock
+    m.state["port_vlan_cfg.json"]["Port_8"] = {
+        "bpEn_8": "0", "bpVid_8": "0", "untag_8": "0", "tag_8": "1"}
+    m.state["tag_vlan_cfg.json"]["bP_1"] = {
+        "TBVEn_1": "1", "pP_1": "8", "oVid_1": "3", "tT_1": "0", "bR_1": "3"}
+    m.state["tag_vlan_cfg.json"]["bP_2"] = {
+        "TBVEn_2": "1", "pP_2": "8", "oVid_2": "998", "tT_2": "0", "bR_2": "62"}
+
+    rows = api.get(f"/api/switches/{sid}/vlans/assignments").json()
+    port = next(r for r in rows if r["port"] == 8)
+    assert port["enabled"] is False and port["pvid"] == 0
+    assert port["mode"] == "trunk" and port["trunk_vlans"] == [3, 998]
+
+
 def test_tag_vlan_replacement_is_sorted_by_physical_port_bridge_and_vlan(api):
     sid = add_switch(api)
     m = api.mock

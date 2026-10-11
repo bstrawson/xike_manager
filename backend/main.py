@@ -1168,7 +1168,15 @@ async def get_vlan_assignments(switch_id: int, user=Depends(get_current_user)):
     for tv in tag_vlans:
         trunk_map.setdefault(tv["port"], []).append(tv["vlan_id"])
     for pv in port_vlans:
-        pv["trunk_vlans"] = sorted(trunk_map.get(pv["port"], []))
+        tagged = sorted(trunk_map.get(pv["port"], []))
+        pv["trunk_vlans"] = tagged
+        # V1 treats bridge/FID 0 specially: after a tagged trunk with the default bridge is
+        # written, it may report the physical port-VLAN row as disabled while retaining all of
+        # the port's independent tagged-VLAN mappings.  The row alone looks "flat", but the
+        # effective port is still a trunk.  Let actual tagged membership take precedence so this
+        # state round-trips through SwitchPilot instead of changing to Flat after a reload.
+        if tagged and pv["mode"] == "flat":
+            pv["mode"] = "trunk"
     return port_vlans
 
 @app.post("/api/switches/{switch_id}/vlans/apply")

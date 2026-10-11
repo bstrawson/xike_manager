@@ -44,6 +44,7 @@ export default {
   'ports.title': 'Port-Konfiguration',
   'ports.tip': 'Konfigurieren Sie physische Port-Parameter. Änderungen werden sofort angewendet, wenn Sie eine Einstellung ändern. Beschreibungen werden lokal gespeichert (nicht auf dem Switch).',
   'ports.port': 'Port',
+  'ports.name': 'Name',
   'ports.desc': 'Beschreibung',
   'ports.descTip': 'Benutzerdefinierte Bezeichnung, die in SwitchPilot gespeichert wird (nicht auf der Switch-Hardware). Hilft bei der Identifizierung der Geräte an jedem Port.',
   'ports.status': 'Status',

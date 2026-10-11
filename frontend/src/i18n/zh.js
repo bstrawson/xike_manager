@@ -44,6 +44,7 @@ export default {
   'ports.title': '端口配置',
   'ports.tip': '配置物理端口参数。修改设置后立即生效。描述信息存储在本地（不在交换机上）。',
   'ports.port': '端口',
+  'ports.name': '名称',
   'ports.desc': '描述',
   'ports.descTip': '存储在 SwitchPilot 中的自定义标签（不在交换机硬件上）。用于标识每个端口连接的设备。',
   'ports.status': '状态',

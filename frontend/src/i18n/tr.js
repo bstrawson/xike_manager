@@ -44,6 +44,7 @@ export default {
   'ports.title': 'Port Yapılandırması',
   'ports.tip': 'Fiziksel port parametrelerini yapılandırın. Bir ayarı değiştirdiğinizde anında uygulanır. Açıklamalar yerel olarak saklanır (anahtar donanımında değil).',
   'ports.port': 'Port',
+  'ports.name': 'Ad',
   'ports.desc': 'Açıklama',
   'ports.descTip': 'SwitchPilot\'ta yerel olarak saklanan özel etiket (anahtar donanımında saklanmaz). Her porta neyin bağlı olduğunu tanımlamaya yardımcı olur.',
   'ports.status': 'Durum',

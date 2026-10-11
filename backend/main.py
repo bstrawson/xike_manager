@@ -723,15 +723,20 @@ async def switch_status(switch_id: int, user=Depends(get_current_user)):
 
 
 # ── Ports ──
+async def _port_descriptions(switch_id: int) -> dict[int, str]:
+    """Return SwitchPilot's locally stored labels, keyed by user-facing port number."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT port, description FROM port_descriptions WHERE switch_id=?", (switch_id,))
+        return {r["port"]: r["description"] for r in await cursor.fetchall()}
+
+
 @app.get("/api/switches/{switch_id}/ports")
 async def get_ports(switch_id: int, user=Depends(get_current_user)):
     client = await _get_client(switch_id)
     ports = await client.get_ports()
     # Enrich with local descriptions
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT port, description FROM port_descriptions WHERE switch_id=?", (switch_id,))
-        descs = {r["port"]: r["description"] for r in await cursor.fetchall()}
+    descs = await _port_descriptions(switch_id)
     for p in ports:
         p["description"] = descs.get(p["port"], "")
     return ports
@@ -1151,6 +1156,7 @@ async def vlan_limits(switch_id: int, user=Depends(get_current_user)):
 @app.get("/api/switches/{switch_id}/vlans/assignments")
 async def get_vlan_assignments(switch_id: int, user=Depends(get_current_user)):
     client = await _get_client(switch_id)
+    descs = await _port_descriptions(switch_id)
     if await client.is_v2():
         table = await client.get_vlan_table_v2()
         cfg = await client.get_port_vlan_cfg_v2()
@@ -1158,7 +1164,8 @@ async def get_vlan_assignments(switch_id: int, user=Depends(get_current_user)):
         for port in sorted(cfg):
             pvid = cfg[port]["pvid"]
             mode, tagged = _v2_port_view(port, table, pvid)
-            rows.append({"port": port, "enabled": mode != "flat", "pvid": pvid, "mode": mode,
+            rows.append({"port": port, "description": descs.get(port, ""),
+                         "enabled": mode != "flat", "pvid": pvid, "mode": mode,
                          "trunk_vlans": tagged, "frame_type": cfg[port]["frame_type"]})
         return rows
     port_vlans = await client.get_port_vlans()
@@ -1168,6 +1175,7 @@ async def get_vlan_assignments(switch_id: int, user=Depends(get_current_user)):
     for tv in tag_vlans:
         trunk_map.setdefault(tv["port"], []).append(tv["vlan_id"])
     for pv in port_vlans:
+        pv["description"] = descs.get(pv["port"], "")
         tagged = sorted(trunk_map.get(pv["port"], []))
         pv["trunk_vlans"] = tagged
         # V1's physical port row cannot distinguish an access port from a trunk: both discard

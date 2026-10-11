@@ -83,6 +83,16 @@ def test_reads_with_swap_relabel_sfp_ports(api):
     assert api.get(f"/api/switches/{sid}/mac/static").json()[0]["port"] == 10
 
 
+def test_vlan_assignments_include_stored_port_descriptions(api):
+    sid = add_switch(api)
+    assert api.post(f"/api/switches/{sid}/ports/description",
+                    json={"port": 8, "description": "Office uplink"}).status_code == 200
+
+    vlans = by_port(api.get(f"/api/switches/{sid}/vlans/assignments").json())
+    assert vlans[8]["description"] == "Office uplink"
+    assert vlans[7]["description"] == ""
+
+
 # ── Writes ──
 @pytest.mark.parametrize("swap,expected_internal", [(False, "9"), (True, "10")])
 def test_every_write_path_translates_port_9(api, swap, expected_internal):

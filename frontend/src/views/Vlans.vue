@@ -55,6 +55,7 @@
             <thead>
               <tr>
                 <th>{{ t('ports.port') }}</th>
+                <th>{{ t('ports.name') }}</th>
                 <th><span class="inline-flex items-center gap-1">{{ t('vlans.mode') }} <Tip :title="t('vlans.mode')" :text="t('vlans.modeTip')" /></span></th>
                 <th><span class="inline-flex items-center gap-1">{{ t('vlans.pvid') }} <Tip :title="t('vlans.pvid')" :text="dot1q ? t('vlans.pvidTipV2') : t('vlans.pvidTip')" /></span></th>
                 <th><span class="inline-flex items-center gap-1">{{ t('vlans.allowed') }} <Tip :title="t('vlans.allowed')" :text="t('vlans.allowedTip')" /></span></th>
@@ -65,9 +66,15 @@
                 <td>
                   <div class="flex items-center gap-2">
                     <span class="font-semibold w-5">{{ r.port }}</span>
-                    <Badge :tone="r.port >= 9 ? 'sfp' : 'rj45'"><bdi dir="ltr">{{ r.port >= 9 ? 'SFP+' : 'RJ45' }}</bdi></Badge>
-                    <Badge v-if="r.port === 1" tone="warn">{{ t('vlans.mgmt') }}</Badge>
+                    <div class="flex flex-col items-start gap-1">
+                      <Badge :tone="r.port >= 9 ? 'sfp' : 'rj45'"><bdi dir="ltr">{{ r.port >= 9 ? 'SFP+' : 'RJ45' }}</bdi></Badge>
+                      <Badge v-if="r.port === 1" tone="warn">{{ t('vlans.mgmt') }}</Badge>
+                    </div>
                   </div>
+                </td>
+                <td class="min-w-32 max-w-52">
+                  <span v-if="r.description" class="block truncate text-sm text-ink-2" :title="r.description">{{ r.description }}</span>
+                  <span v-else class="text-faint">—</span>
                 </td>
                 <td>
                   <select v-model="r.mode" @change="onModeChange(r)" :disabled="!editable(r)" class="select select-sm w-28">
@@ -99,8 +106,8 @@
                   <span v-else class="text-faint">—</span>
                 </td>
               </tr>
-              <tr v-if="!rows.length && !loadError"><td colspan="4" class="text-center text-muted py-8">{{ t('common.loading') }}</td></tr>
-              <tr v-if="loadError"><td colspan="4"><EmptyState compact icon="x-circle" :title="t('common.failedLoad')" :text="loadError"><Btn size="sm" icon="refresh" @click="load">{{ t('ui.retry') }}</Btn></EmptyState></td></tr>
+              <tr v-if="!rows.length && !loadError"><td colspan="5" class="text-center text-muted py-8">{{ t('common.loading') }}</td></tr>
+              <tr v-if="loadError"><td colspan="5"><EmptyState compact icon="x-circle" :title="t('common.failedLoad')" :text="loadError"><Btn size="sm" icon="refresh" @click="load">{{ t('ui.retry') }}</Btn></EmptyState></td></tr>
             </tbody>
           </table>
         </div>
@@ -199,7 +206,7 @@ const dirty = computed(() => changed.value.length > 0)
 
 function toRow(a) {
   // the switch-reported mode is kept as is ('unknown' included) so that choosing another mode counts as a change
-  return { port: a.port, mode: a.mode, access_vlan: a.mode === 'access' ? a.pvid : null,
+  return { port: a.port, description: a.description || '', mode: a.mode, access_vlan: a.mode === 'access' ? a.pvid : null,
            native_vlan: a.mode === 'trunk' ? a.pvid : null, trunk_vlans: [...(a.trunk_vlans || [])] }
 }
 function setBaseline(list) {

@@ -44,6 +44,7 @@ export default {
   'ports.title': 'Configuration des ports',
   'ports.tip': 'Configurez les paramètres physiques des ports. Les modifications sont appliquées immédiatement. Les descriptions sont stockées localement (pas sur le switch).',
   'ports.port': 'Port',
+  'ports.name': 'Nom',
   'ports.desc': 'Description',
   'ports.descTip': 'Étiquette personnalisée stockée dans SwitchPilot (pas sur le matériel du switch). Permet d\'identifier ce qui est connecté à chaque port.',
   'ports.status': 'État',

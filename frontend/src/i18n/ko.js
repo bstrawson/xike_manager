@@ -44,6 +44,7 @@ export default {
   'ports.title': '포트 설정',
   'ports.tip': '물리 포트 매개변수를 설정합니다. 설정을 변경하면 즉시 적용됩니다. 포트 설명은 로컬에 저장됩니다(스위치 장비에는 저장되지 않습니다).',
   'ports.port': '포트',
+  'ports.name': '이름',
   'ports.desc': '설명',
   'ports.descTip': 'SwitchPilot에 로컬 저장되는 사용자 정의 레이블입니다(스위치 장비에는 저장되지 않습니다). 각 포트에 무엇이 연결되어 있는지 식별하는 데 도움이 됩니다.',
   'ports.status': '상태',

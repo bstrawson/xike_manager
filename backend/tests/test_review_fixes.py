@@ -9,6 +9,7 @@ from jose import jwt
 import auth
 import db as dbmod
 import sse
+import switch_client
 from conftest import add_switch, login_as, ADMIN_PASSWORD
 
 
@@ -206,7 +207,12 @@ def test_vlan_apply_failure_restores_previous_tables(api):
     assert "save_port_vlan_map.json" not in eps
 
 
-def test_sodola_v1_vlan_apply_skips_xikestor_init(api):
+def test_sodola_v1_vlan_apply_skips_xikestor_init(api, monkeypatch):
+    async def minimal_post(client, endpoint, data):
+        api.mock.posts.append((endpoint, data))
+        return "OK"
+
+    monkeypatch.setattr(switch_client.SwitchClient, "_post_minimal", minimal_post)
     api.mock.state["status.json"]["modle"] = "SL-8T2XS-WEB"
     sid = add_switch(api)
     r = api.post(f"/api/switches/{sid}/vlans/apply",

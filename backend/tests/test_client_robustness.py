@@ -78,6 +78,79 @@ def test_get_does_not_retry_twice():
         asyncio.run(_client_with(handler).get_status())
 
 
+def test_sodola_tag_write_uses_the_minimal_http10_envelope(monkeypatch):
+    sent = bytearray()
+
+    class Reader:
+        async def read(self):
+            return b"HTTP/1.0 200 OK\r\nContent-Length:2\r\n\r\nOK"
+
+    class Writer:
+        def write(self, data):
+            sent.extend(data)
+
+        async def drain(self):
+            pass
+
+        def close(self):
+            pass
+
+        async def wait_closed(self):
+            pass
+
+    async def connect(host, port):
+        assert (host, port) == ("10.0.0.1", 80)
+        return Reader(), Writer()
+
+    monkeypatch.setattr(asyncio, "open_connection", connect)
+
+    async def scenario():
+        client = _client_with(lambda request: httpx.Response(500))
+        client.model = "SL-8T2XS-WEB"
+        client._logged_in = True
+        client.client.cookies.set("user", "not-sent")
+        client.client.cookies.set("session", "abc123")
+        try:
+            await client.set_tag_vlans([
+                {"entry": 0, "port": 2, "vlan_id": 999, "bridge": 63, "tag_type": "single"}])
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+    body = b'{"bpCboxName_0":"on","ppName_0":"2","brName_0":"63","oVidName_0":"999"}'
+    assert bytes(sent) == (b"POST /tag_vlan_cfg.json HTTP/1.0\r\n"
+                           b"Cookie:session=abc123\r\n"
+                           + f"Content-Length:{len(body)}\r\n\r\n".encode() + body)
+
+
+def test_sodola_compact_tag_body_fits_35_single_tag_entries(monkeypatch):
+    captured = {}
+
+    async def minimal_post(client, endpoint, data):
+        captured.update(data)
+        return "OK"
+
+    monkeypatch.setattr(SwitchClient, "_post_minimal", minimal_post)
+
+    async def scenario():
+        client = _client_with(lambda request: httpx.Response(500))
+        client.model = "SL-8T2XS-WEB"
+        try:
+            await client.set_tag_vlans([
+                {"entry": i, "port": 10, "vlan_id": 4094, "bridge": 63, "tag_type": "single"}
+                for i in range(35)
+            ])
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
+    body = json.dumps(captured, separators=(",", ":")).encode()
+    assert len(body) <= 2686
+    assert len(body) == 2621
+    assert all(v == "on" for k, v in captured.items() if k.startswith("bpCboxName_"))
+    assert not any(k.startswith("vtypeName_") for k in captured)
+
+
 def test_model_falls_back_to_des_on_newer_firmware(api):
     api.mock.state["status.json"] = {"des": "SKS3200-8E2X", "fw_ver": "2.0.0.3", "hw_ver": "A0",
                                      "sys_macaddr": "8C:A6:82:00:00:02", "temperature": "40"}

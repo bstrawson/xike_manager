@@ -375,6 +375,63 @@ class SwitchClient:
             raise SwitchError(f"{endpoint}: switch answered HTTP {r.status_code}")
         return r.text
 
+    def _session_cookie(self) -> str:
+        """Return the session token set by /authorize without sending the redundant user cookie."""
+        cookies = [c for c in self.client.cookies.jar if c.name == "session"]
+        matching = [c for c in cookies if not c.domain or c.domain.lstrip(".") == self.ip]
+        session = (matching or cookies)[-1].value if matching or cookies else ""
+        if not session or "\r" in session or "\n" in session:
+            raise SwitchError("the switch login did not provide a usable session cookie")
+        return session
+
+    async def _minimal_post_once(self, endpoint: str, body: bytes) -> tuple[int, str]:
+        """Sodola V1's smallest proven request envelope for its constrained HTTP server."""
+        session = self._session_cookie()
+        request = (f"POST /{endpoint} HTTP/1.0\r\n"
+                   f"Cookie:session={session}\r\n"
+                   f"Content-Length:{len(body)}\r\n\r\n").encode("ascii") + body
+        writer = None
+        async with self._gate():
+            try:
+                reader, writer = await asyncio.wait_for(asyncio.open_connection(self.ip, 80), timeout=5)
+                writer.write(request)
+                await writer.drain()
+                raw = await asyncio.wait_for(reader.read(), timeout=30)
+            except asyncio.TimeoutError as e:
+                raise SwitchError(f"{endpoint}: switch timed out") from e
+            except OSError as e:
+                raise SwitchError(f"{endpoint}: switch connection failed ({e.__class__.__name__})") from e
+            finally:
+                if writer is not None:
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except OSError:
+                        pass
+        head, separator, response_body = raw.partition(b"\r\n\r\n")
+        try:
+            status = int(head.split(b"\r\n", 1)[0].split()[1])
+        except (IndexError, ValueError):
+            raise SwitchError(f"{endpoint}: switch returned a malformed HTTP response")
+        if not separator:
+            response_body = b""
+        return status, response_body.decode("utf-8", errors="replace")
+
+    async def _post_minimal(self, endpoint: str, data: dict) -> str:
+        """POST compact JSON over HTTP/1.0 with only session and length headers."""
+        await self._ensure_login()
+        body = json.dumps(data, separators=(",", ":")).encode()
+        status, text = await self._minimal_post_once(endpoint, body)
+        if "login.html" in text:
+            await self._relogin()
+            status, text = await self._minimal_post_once(endpoint, body)
+            if "login.html" in text:
+                self._logged_in = False
+                raise SwitchError(f"{endpoint}: the switch rejected the write (session expired)")
+        if status != 200:
+            raise SwitchError(f"{endpoint}: switch answered HTTP {status}")
+        return text
+
     # ── System ──
     async def get_status(self):
         status = await self._get("status.json")
@@ -754,6 +811,11 @@ class SwitchClient:
         bridge defaults to the VLAN's own bridge (see default_bridge) so tagged frames land
         in the same bridge as the VLAN's access ports.
         """
+        # Sodola V1's handler has a 2686-byte body ceiling. Hardware testing confirms that a
+        # missing tag type defaults to single-tag (zero), but its checkbox value must remain
+        # the factory UI's "on". Keep the full factory representation for other models until
+        # their handlers have been verified to have the same semantics.
+        sodola_v1 = self.model.upper() == "SL-8T2XS-WEB"
         data = {}
         for e in entries:
             idx = e["entry"]
@@ -765,11 +827,20 @@ class SwitchClient:
             if bridge is None:
                 bridge = default_bridge(vid)
             data[f"bpCboxName_{idx}"] = "on"
-            data[f"vtypeName_{idx}"] = "1" if e.get("tag_type") == "double" else "0"
+            double_tag = e.get("tag_type") == "double"
+            if double_tag:
+                data[f"vtypeName_{idx}"] = "1"
+            elif not sodola_v1:
+                data[f"vtypeName_{idx}"] = "0"
             data[f"ppName_{idx}"] = str(internal)
             data[f"brName_{idx}"] = str(int(bridge))
             data[f"oVidName_{idx}"] = str(vid)
-            data[f"iVidName_{idx}"] = str(int(e.get("inner_vid") or 0))
+            # The native Sodola UI omits this field for an ordinary single tag. Besides matching
+            # its request, that saves scarce body bytes in a large replacement table.
+            if double_tag:
+                data[f"iVidName_{idx}"] = str(int(e.get("inner_vid") or 0))
+        if sodola_v1:
+            return await self._post_minimal("tag_vlan_cfg.json", data)
         return await self._post("tag_vlan_cfg.json", data)
 
     async def save_tag_vlans(self):

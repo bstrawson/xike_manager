@@ -741,10 +741,12 @@ class SwitchClient:
             tag = p[f"tag_{i}"] == "1"
             if not enabled:
                 mode = "flat"
-            elif untag:
+            elif tag or untag:
+                # Both access ports and trunks discard tagged frames that do not match a
+                # tag-VLAN classifier.  The caller combines this row with that table to tell
+                # them apart.  Treat the old discard-untagged access setting as access too so
+                # existing configurations remain editable until they are reapplied.
                 mode = "access"
-            elif tag:
-                mode = "trunk"
             else:
                 mode = "unknown"
             result.append({
@@ -772,9 +774,10 @@ class SwitchClient:
                 continue
             data[f"checkbox_{internal}"] = "on"
             data[f"fidName_{internal}"] = str(pvid)
-            if mode == "access":
-                data[f"checkboxUntag_{internal}"] = "on"
-            elif mode == "trunk":
+            if mode in ("access", "trunk"):
+                # The firmware's checkbox is literal: reject tagged frames which were not
+                # handled by a tag-VLAN classifier.  Access ports have no such classifiers;
+                # trunks get one for every allowed tagged VLAN.
                 data[f"checkboxTag_{internal}"] = "on"
         result = await self._post("port_vlan_cfg.json", data)
         if "invalid FID" in result:

@@ -140,7 +140,8 @@ def test_vlan_apply_keeps_untouched_ports_and_the_uplink(api):
     assert endpoints(m) == ["init_vlan.json", "port_vlan_cfg.json", "tag_vlan_cfg.json",
                             "save_port_vlan_map.json", "save_tag_vlan_map.json"]
     pv = m.posted("port_vlan_cfg.json")[0]
-    assert pv["checkbox_5"] == "on" and pv["fidName_5"] == "10" and pv["checkboxUntag_5"] == "on" and "checkboxTag_5" not in pv
+    assert pv["checkbox_5"] == "on" and pv["fidName_5"] == "10" and pv["checkboxTag_5"] == "on"
+    assert "checkboxUntag_5" not in pv
     assert pv["checkbox_9"] == "on" and pv["fidName_9"] == "20" and pv["checkboxTag_9"] == "on"  # untouched trunk kept
     assert "checkbox_1" not in pv and "fidName_1" not in pv                                      # flat = omitted, like native UI
     assert len([k for k in pv if k.startswith("checkbox_")]) == 2
@@ -181,6 +182,25 @@ def test_v1_tagged_memberships_make_a_disabled_fid_zero_port_a_trunk(api):
     port = next(r for r in rows if r["port"] == 8)
     assert port["enabled"] is False and port["pvid"] == 0
     assert port["mode"] == "trunk" and port["trunk_vlans"] == [3, 998]
+
+
+def test_v1_tagged_discard_is_access_without_tag_mappings_and_trunk_with_them(api):
+    sid = add_switch(api)
+    m = api.mock
+    m.state["port_vlan_cfg.json"]["Port_5"] = {
+        "bpEn_5": "1", "bpVid_5": "10", "untag_5": "0", "tag_5": "1"}
+    # Keep accepting the setting written by older SwitchPilot versions until it is reapplied.
+    m.state["port_vlan_cfg.json"]["Port_6"] = {
+        "bpEn_6": "1", "bpVid_6": "11", "untag_6": "1", "tag_6": "0"}
+    m.state["port_vlan_cfg.json"]["Port_7"] = {
+        "bpEn_7": "1", "bpVid_7": "12", "untag_7": "0", "tag_7": "1"}
+    m.state["tag_vlan_cfg.json"]["bP_1"] = {
+        "TBVEn_1": "1", "pP_1": "7", "oVid_1": "13", "tT_1": "0", "bR_1": "13"}
+
+    rows = {r["port"]: r for r in api.get(f"/api/switches/{sid}/vlans/assignments").json()}
+    assert (rows[5]["mode"], rows[5]["pvid"], rows[5]["trunk_vlans"]) == ("access", 10, [])
+    assert (rows[6]["mode"], rows[6]["pvid"], rows[6]["trunk_vlans"]) == ("access", 11, [])
+    assert (rows[7]["mode"], rows[7]["pvid"], rows[7]["trunk_vlans"]) == ("trunk", 12, [13])
 
 
 def test_tag_vlan_replacement_is_sorted_by_physical_port_bridge_and_vlan(api):

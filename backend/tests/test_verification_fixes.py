@@ -190,7 +190,8 @@ def test_vlan_apply_accepts_the_unknown_mode_the_switch_reports(api):
     r = api.post(f"/api/switches/{sid}/vlans/apply", json=payload)
     assert r.status_code == 200, r.text
     pv = m.posted("port_vlan_cfg.json")[-1]
-    assert (pv["checkbox_4"], pv["fidName_4"], pv["checkboxUntag_4"], pv["checkboxTag_4"]) == ("on", "5", "", "")
+    assert (pv["checkbox_4"], pv["fidName_4"]) == ("on", "5")
+    assert "checkboxUntag_4" not in pv and "checkboxTag_4" not in pv
     assert pv["checkbox_9"] == "on" and pv["fidName_9"] == "20" and pv["checkboxTag_9"] == "on"
     assert _tag_table(m.posted("tag_vlan_cfg.json")[-1]) == {30: {"30"}}  # port 9's entry kept
 
@@ -215,6 +216,26 @@ def test_tagged_vlans_above_63_get_a_bridge_of_their_own(api):
     r = api.post(f"/api/switches/{sid}/vlans/apply", json=[{"port": 5, "mode": "trunk", "native_vlan": 1, "trunk_vlans": [100]}])
     assert r.status_code == 200, r.text
     assert _tag_table(m.posted("tag_vlan_cfg.json")[-1])[100] == {b100}
+
+
+def test_existing_high_vlan_keeps_bridge_shared_with_its_access_fid(api):
+    sid = add_switch(api)
+    m = api.mock
+    m.state["port_vlan_cfg.json"]["Port_1"] = {
+        "bpEn_1": "1", "bpVid_1": "63", "untag_1": "0", "tag_1": "1"}
+    m.state["port_vlan_cfg.json"]["Port_6"] = {
+        "bpEn_6": "1", "bpVid_6": "62", "untag_6": "0", "tag_6": "1"}
+    m.state["tag_vlan_cfg.json"]["bP_1"] = {
+        "TBVEn_1": "1", "pP_1": "6", "oVid_1": "998", "tT_1": "0", "bR_1": "62"}
+    m.state["tag_vlan_cfg.json"]["bP_2"] = {
+        "TBVEn_2": "1", "pP_2": "1", "oVid_2": "999", "tT_2": "0", "bR_2": "63"}
+
+    r = api.post(f"/api/switches/{sid}/vlans/apply",
+                 json=[{"port": 5, "mode": "access", "access_vlan": 10}])
+    assert r.status_code == 200, r.text
+    table = _tag_table(m.posted("tag_vlan_cfg.json")[-1])
+    assert table[998] == {"62"}
+    assert table[999] == {"63"}
 
 
 def test_no_free_bridge_is_a_clear_error(api):

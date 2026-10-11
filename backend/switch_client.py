@@ -245,6 +245,9 @@ class SwitchClient:
         # API from the database, so a restart does not test it again with a temporary VLAN)
         self.vlan_layout_known = None
         self.on_vlan_layout = None
+        # Filled from the database by the API. Firmware numbers overlap between rebadged
+        # devices even where their native write sequences differ.
+        self.model = ""
 
     def _gate(self):
         """Send one request at a time to the embedded web server on every firmware line."""
@@ -697,9 +700,9 @@ class SwitchClient:
     async def set_port_vlans(self, configs: list[dict]):
         """configs: [{"port": 1, "mode": "access"|"trunk"|"flat"|"unknown", "pvid": 10}, ...]
 
-        Every port in the list is written explicitly: a flat port is sent with its checkbox
-        empty, as the native UI's form does, instead of being left out (the firmware treats a
-        missing port as unchecked, which used to reset ports the caller did not mention).
+        The caller supplies the complete desired table. Like the native UI, enabled ports are
+        present and unchecked fields/flat ports are omitted; the firmware interprets omission as
+        unchecked. Sending those fields as empty strings does not match its successful request.
         """
         data = {}
         for cfg in configs:
@@ -709,15 +712,13 @@ class SwitchClient:
             if not 0 <= pvid <= MAX_FID:
                 raise ValueError(f"PVID {pvid} on port {cfg['port']} is outside 0-{MAX_FID}")
             if mode == "flat":
-                data[f"checkbox_{internal}"] = ""
-                data[f"fidName_{internal}"] = "0"
-                data[f"checkboxUntag_{internal}"] = ""
-                data[f"checkboxTag_{internal}"] = ""
                 continue
             data[f"checkbox_{internal}"] = "on"
             data[f"fidName_{internal}"] = str(pvid)
-            data[f"checkboxUntag_{internal}"] = "on" if mode == "access" else ""
-            data[f"checkboxTag_{internal}"] = "on" if mode == "trunk" else ""
+            if mode == "access":
+                data[f"checkboxUntag_{internal}"] = "on"
+            elif mode == "trunk":
+                data[f"checkboxTag_{internal}"] = "on"
         result = await self._post("port_vlan_cfg.json", data)
         if "invalid FID" in result:
             raise ValueError(f"Invalid FID/PVID (max {MAX_FID})")

@@ -139,10 +139,10 @@ def test_vlan_apply_keeps_untouched_ports_and_the_uplink(api):
     assert endpoints(m) == ["init_vlan.json", "port_vlan_cfg.json", "tag_vlan_cfg.json",
                             "save_port_vlan_map.json", "save_tag_vlan_map.json"]
     pv = m.posted("port_vlan_cfg.json")[0]
-    assert pv["checkbox_5"] == "on" and pv["fidName_5"] == "10" and pv["checkboxUntag_5"] == "on" and pv["checkboxTag_5"] == ""
+    assert pv["checkbox_5"] == "on" and pv["fidName_5"] == "10" and pv["checkboxUntag_5"] == "on" and "checkboxTag_5" not in pv
     assert pv["checkbox_9"] == "on" and pv["fidName_9"] == "20" and pv["checkboxTag_9"] == "on"  # untouched trunk kept
-    assert pv["checkbox_1"] == "" and pv["fidName_1"] == "0"                                     # flat, written explicitly
-    assert len([k for k in pv if k.startswith("checkbox_")]) == 10
+    assert "checkbox_1" not in pv and "fidName_1" not in pv                                      # flat = omitted, like native UI
+    assert len([k for k in pv if k.startswith("checkbox_")]) == 2
     tv = m.posted("tag_vlan_cfg.json")[0]
     assert tv["ppName_0"] == "9" and tv["oVidName_0"] == "30"  # carried over
     assert tv["brName_0"] == "30"  # ...and moved from bridge 0 (earlier versions) to its VLAN's bridge
@@ -201,9 +201,19 @@ def test_vlan_apply_failure_restores_previous_tables(api):
     eps = endpoints(m)
     assert eps == ["init_vlan.json", "port_vlan_cfg.json", "port_vlan_cfg.json", "tag_vlan_cfg.json"]
     restored_pv, restored_tv = m.posted("port_vlan_cfg.json")[-1], m.posted("tag_vlan_cfg.json")[-1]
-    assert restored_pv["fidName_9"] == "20" and restored_pv["checkbox_2"] == ""
+    assert restored_pv["fidName_9"] == "20" and "checkbox_2" not in restored_pv
     assert restored_tv["ppName_0"] == "9" and restored_tv["oVidName_0"] == "30"
     assert "save_port_vlan_map.json" not in eps
+
+
+def test_sodola_v1_vlan_apply_skips_xikestor_init(api):
+    api.mock.state["status.json"]["modle"] = "SL-8T2XS-WEB"
+    sid = add_switch(api)
+    r = api.post(f"/api/switches/{sid}/vlans/apply",
+                 json=[{"port": 5, "mode": "access", "access_vlan": 10}])
+    assert r.status_code == 200, r.text
+    assert endpoints(api.mock) == ["port_vlan_cfg.json", "tag_vlan_cfg.json",
+                                   "save_port_vlan_map.json", "save_tag_vlan_map.json"]
 
 
 def test_vlan_list_merges_in_use_without_writing(api):

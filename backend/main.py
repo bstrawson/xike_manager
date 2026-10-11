@@ -338,6 +338,7 @@ async def _switch_row(switch_id: int):
 async def _get_client(switch_id: int) -> SwitchClient:
     sw = await _switch_row(switch_id)
     client = get_switch_client(sw["id"], sw["ip"], sw["username"], sw["password"], bool(sw["swap_sfp_9_10"]))
+    client.model = str(sw["model"] or "")
     fw, _, layout = (sw["vlan_layout"] or "").rpartition(":")
     if fw and layout:
         client.vlan_layout_known = (fw, layout)
@@ -779,20 +780,27 @@ def _assign_bridges(tag_entries: list[dict], port_configs: list[dict], current_t
 
     VLANs 1-63 use their own ID (the FID of their access ports), so the tagged and untagged
     traffic of one VLAN share a bridge. The hardware only has bridges 0-63, so a VLAN above
-    63 (tagged-only, by construction) gets a free bridge: the one it already had on the
-    switch when there is one, else the highest ID not used by a port's FID, by another VLAN,
-    or by a VLAN defined in SwitchPilot that could become an access VLAN later. Entries are
-    normalised on every apply so one VLAN never ends up split over two bridges (entries
-    written with bridge 0 by earlier versions included).
+    63 gets the bridge it already had on the switch when there is one, else the highest free
+    ID. An existing high VLAN may deliberately share a bridge with a port FID: that is how,
+    for example, tagged VLAN 998 is joined to untagged bridge/FID 62. Only a new allocation
+    avoids port FIDs, other VLANs and VLANs defined in SwitchPilot. Entries are normalised on
+    every apply so one VLAN never ends up split over two bridges (entries written with bridge
+    0 by earlier versions included).
     """
     used = {int(p["pvid"]) for p in port_configs if p["mode"] != "flat"}
     reserved = (used | {v for v in defined if 1 <= v <= MAX_FID}
                 | {e["vlan_id"] for e in tag_entries if e["vlan_id"] <= MAX_FID})
     assigned: dict[int, int] = {}
+    owners: dict[int, int] = {}
     for t in current_tags:  # keep what the switch already holds for a high VLAN
         vid, bridge = t["vlan_id"], int(t.get("bridge") or 0)
-        if vid > MAX_FID and 1 <= bridge <= MAX_FID and bridge not in reserved and bridge not in assigned.values():
-            assigned.setdefault(vid, bridge)
+        # A bridge reserved by a port FID is not a conflict here: connecting this tagged VLAN
+        # to that untagged FID is the purpose of the mapping. Still do not preserve two distinct
+        # high VLANs on one bridge; the later one receives a fresh bridge below.
+        if (vid > MAX_FID and 1 <= bridge <= MAX_FID and vid not in assigned
+                and bridge not in owners):
+            assigned[vid] = bridge
+            owners[bridge] = vid
     for e in tag_entries:
         vid = e["vlan_id"]
         if vid <= MAX_FID:
@@ -1242,14 +1250,18 @@ async def apply_vlan_assignments(switch_id: int, assignments: list[PortAssignmen
             defined = {r[0] for r in await cursor.fetchall()}
         _assign_bridges(tag_entries, port_configs, current_tags, defined)
 
-        # 3. Write: reset first so the outcome is the same whatever init_vlan clears
+        # 3. Xikestor's established V1 flow initialises the VLAN table before rebuilding it.
+        #    Sodola uses the same 1.0.0.6 version number but its SL-8T2XS-WEB native UI writes
+        #    the complete tables directly and rejects init_vlan.json, so model identity matters.
         previous_ports = [{"port": p["port"], "mode": p["mode"], "pvid": p["pvid"]} for p in current_ports.values()]
         previous_tags = [{"entry": i, "port": t["port"], "vlan_id": t["vlan_id"], "bridge": t.get("bridge")}
                          for i, t in enumerate(current_tags)]
-        step = "reset"
+        sodola_v1 = client.model.upper() == "SL-8T2XS-WEB"
+        step = "port VLANs" if sodola_v1 else "reset"
         try:
-            await client.reset_vlans()
-            step = "port VLANs"
+            if not sodola_v1:
+                await client.reset_vlans()
+                step = "port VLANs"
             await client.set_port_vlans(port_configs)
             step = "tag VLANs"
             if tag_entries:

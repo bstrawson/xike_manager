@@ -101,7 +101,10 @@ def test_every_write_path_translates_port_9(api, swap, expected_internal):
     pv = m.posted("port_vlan_cfg.json")[-1]
     assert pv[f"checkboxTag_{expected_internal}"] == "on" and pv[f"fidName_{expected_internal}"] == "5"
     assert pv["fidName_2"] == "7" and pv["checkboxUntag_2"] == "on"
-    assert len([k for k in pv if k.startswith("checkbox_")]) == 10  # every port written explicitly
+    expected_enabled = {"checkbox_2", f"checkbox_{expected_internal}"}
+    if swap:  # the fixture's internal port 9 is a different, untouched active port after the swap
+        expected_enabled.add(f"checkbox_{other}")
+    assert {k for k in pv if k.startswith("checkbox_")} == expected_enabled
     assert m.posted("tag_vlan_cfg.json")[-1]["ppName_0"] == expected_internal
 
     assert api.post(f"/api/switches/{sid}/lag", json={
